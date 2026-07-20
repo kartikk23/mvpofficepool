@@ -1,0 +1,82 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const http = require('http');
+const { Server } = require('socket.io');
+const rateLimit = require('express-rate-limit');
+const { v4: uuidv4 } = require('uuid');
+
+const pool = require('./config/db');
+const { notifyUser } = require('./utils/notifications');
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
+const rideRoutes = require('./routes/rides');
+const bookingRoutes = require('./routes/bookings');
+const paymentRoutes = require('./routes/payments');
+const ratingRoutes = require('./routes/ratings');
+const sosRoutes = require('./routes/sos');
+const vehicleRoutes = require('./routes/vehicles');
+const savedAddressRoutes = require('./routes/savedAddresses');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+app.use(cors());
+app.use(express.json());
+
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }); // 300 req / 15 min / IP
+app.use(limiter);
+
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/rides', rideRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/ratings', ratingRoutes);
+app.use('/api/sos', sosRoutes);
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/saved-addresses', savedAddressRoutes);
+
+// ---------------- REAL-TIME: chat + live location share during a ride ----------------
+io.on('connection', (socket) => {
+  socket.on('join_booking', (bookingId) => {
+    socket.join(`booking_${bookingId}`);
+  });
+
+  socket.on('chat_message', async ({ bookingId, senderId, body }) => {
+    if (!bookingId || !senderId || !body?.trim()) return;
+    try {
+      const result = await pool.query(
+        `INSERT INTO messages (id, booking_id, sender_id, body) VALUES ($1,$2,$3,$4)
+         RETURNING id, sent_at`,
+        [uuidv4(), bookingId, senderId, body.trim()]
+      );
+      const { id, sent_at } = result.rows[0];
+      io.to(`booking_${bookingId}`).emit('chat_message', { id, bookingId, senderId, body: body.trim(), sentAt: sent_at });
+
+      const participants = await pool.query(
+        `SELECT b.rider_id, r.driver_id FROM bookings b JOIN rides r ON r.id = b.ride_id WHERE b.id=$1`,
+        [bookingId]
+      );
+      if (participants.rows.length) {
+        const { rider_id, driver_id } = participants.rows[0];
+        const recipientId = senderId === rider_id ? driver_id : rider_id;
+        notifyUser(recipientId, 'New message', body.trim(), { type: 'chat_message', bookingId });
+      }
+    } catch (err) {
+      console.error('Failed to persist chat message', err);
+    }
+  });
+
+  socket.on('location_update', ({ bookingId, lat, lng }) => {
+    io.to(`booking_${bookingId}`).emit('location_update', { lat, lng, at: new Date() });
+  });
+
+  socket.on('disconnect', () => {});
+});
+
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => console.log(`OfficePool API running on port ${PORT}`));

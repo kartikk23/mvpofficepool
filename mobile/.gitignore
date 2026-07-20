@@ -1,0 +1,22 @@
+node_modules
+.env
+.expo
+dist
+web-build
+*.log
+google-services.json
+android/app/google-services.json
+firebase-adminsdk.json
+
+# Native prebuild output (regenerate with `npx expo prebuild`) — comment these out
+# only if you intentionally check in bare native projects instead of using EAS Build.
+android/build
+android/app/build
+android/.gradle
+android/.kotlin
+android/app/.cxx
+*.keystore
+*.jks
+
+# macOS / editor
+.DS_Store
