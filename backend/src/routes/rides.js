@@ -119,6 +119,82 @@ router.get('/search', authMiddleware, async (req, res) => {
   }
 });
 
+// ---------------- NEARBY RIDES FEED (ambient feed, no destination needed) ----------------
+// Shows active rides whose origin is within `radiusKm` of the rider's current location,
+// closest first. If nothing is within range (e.g. new/quiet area), falls back to showing
+// all active rides so the feed is never empty.
+router.get('/nearby', authMiddleware, async (req, res) => {
+  const { lat, lng, radiusKm } = req.query;
+  const radius = (radiusKm ? parseFloat(radiusKm) : 2) * 1000; // meters
+
+  if (!lat || !lng) {
+    return res.status(400).json({ error: 'lat and lng are required' });
+  }
+
+  const selectFields = `
+    r.id, r.origin_address, r.destination_address, r.departure_time,
+    r.seats_total, r.seats_booked, r.price_per_km, r.estimated_distance_km, r.estimated_fare,
+    u.id AS driver_id, u.full_name AS driver_name, u.profile_photo_url,
+    u.company_name, u.designation, u.company_email_verified, u.linkedin_verified, u.trust_score,
+    ST_Distance(r.origin_geo, ST_MakePoint($1,$2)::geography) AS origin_distance_m
+  `;
+
+  try {
+    const nearbyResult = await pool.query(
+      `SELECT ${selectFields}
+       FROM rides r JOIN users u ON u.id = r.driver_id
+       WHERE r.status = 'active' AND r.seats_booked < r.seats_total
+         AND r.driver_id != $3 AND r.departure_time > now()
+         AND ST_DWithin(r.origin_geo, ST_MakePoint($1,$2)::geography, $4)
+       ORDER BY origin_distance_m ASC, r.departure_time ASC
+       LIMIT 30`,
+      [lng, lat, req.user.id, radius]
+    );
+
+    let rows = nearbyResult.rows;
+    let isFallback = false;
+
+    if (rows.length === 0) {
+      const allResult = await pool.query(
+        `SELECT ${selectFields}
+         FROM rides r JOIN users u ON u.id = r.driver_id
+         WHERE r.status = 'active' AND r.seats_booked < r.seats_total
+           AND r.driver_id != $3 AND r.departure_time > now()
+         ORDER BY origin_distance_m ASC, r.departure_time ASC
+         LIMIT 30`,
+        [lng, lat, req.user.id]
+      );
+      rows = allResult.rows;
+      isFallback = true;
+    }
+
+    const rides = rows.map((r) => ({
+      rideId: r.id,
+      originAddress: r.origin_address,
+      destinationAddress: r.destination_address,
+      departureTime: r.departure_time,
+      seatsAvailable: r.seats_total - r.seats_booked,
+      pricePerKm: r.price_per_km,
+      estimatedFare: r.estimated_fare,
+      driver: {
+        id: r.driver_id,
+        name: r.driver_name,
+        photoUrl: r.profile_photo_url,
+        company: r.company_name,
+        designation: r.designation,
+        badges: { companyVerified: r.company_email_verified, linkedinVerified: r.linkedin_verified },
+        trustScore: r.trust_score,
+      },
+      originDistanceMeters: Math.round(r.origin_distance_m),
+    }));
+
+    res.json({ count: rides.length, isFallback, radiusKm: radius / 1000, rides });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load nearby rides' });
+  }
+});
+
 // ---------------- GET RIDE DETAILS ----------------
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
