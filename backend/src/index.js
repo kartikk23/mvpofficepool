@@ -17,6 +17,9 @@ const ratingRoutes = require('./routes/ratings');
 const sosRoutes = require('./routes/sos');
 const vehicleRoutes = require('./routes/vehicles');
 const savedAddressRoutes = require('./routes/savedAddresses');
+const impactRoutes = require('./routes/impact');
+const circleRoutes = require('./routes/circles');
+const { startRecurringRidesJob } = require('./utils/recurringRides');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,6 +42,8 @@ app.use('/api/ratings', ratingRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/saved-addresses', savedAddressRoutes);
+app.use('/api/impact', impactRoutes);
+app.use('/api/circles', circleRoutes);
 
 // ---------------- REAL-TIME: chat + live location share during a ride ----------------
 io.on('connection', (socket) => {
@@ -80,3 +85,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`OfficePool API running on port ${PORT}`));
+startRecurringRidesJob();

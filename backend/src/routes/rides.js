@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const pool = require('../config/db');
 const authMiddleware = require('../middleware/auth');
 const { calculateFare, clampPricePerKm } = require('../utils/pricing');
+const { buildSafetyFilters } = require('../utils/safetyFilters');
 
 const router = express.Router();
 
@@ -61,7 +62,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // AND whose destination is within `radiusKm` of the rider's drop point
 // AND departure time is within +/- 30 min of preferred time.
 router.get('/search', authMiddleware, async (req, res) => {
-  const { pickupLat, pickupLng, dropLat, dropLng, preferredTime, radiusKm } = req.query;
+  const { pickupLat, pickupLng, dropLat, dropLng, preferredTime, radiusKm, sameCompanyOnly, sameGenderOnly } = req.query;
   const radius = (radiusKm ? parseFloat(radiusKm) : 2) * 1000; // meters
 
   if (!pickupLat || !pickupLng || !dropLat || !dropLng || !preferredTime) {
@@ -69,6 +70,9 @@ router.get('/search', authMiddleware, async (req, res) => {
   }
 
   try {
+    const me = await pool.query('SELECT company_name, gender FROM users WHERE id=$1', [req.user.id]);
+    const filters = buildSafetyFilters({ sameCompanyOnly, sameGenderOnly, me: me.rows[0], startIndex: 7 });
+
     const result = await pool.query(
       `SELECT r.id, r.origin_address, r.destination_address, r.departure_time,
               r.seats_total, r.seats_booked, r.price_per_km, r.estimated_distance_km, r.estimated_fare,
@@ -85,10 +89,11 @@ router.get('/search', authMiddleware, async (req, res) => {
          AND ST_DWithin(r.destination_geo, ST_MakePoint($3,$4)::geography, $5)
          AND r.departure_time BETWEEN $6::timestamptz - INTERVAL '30 minutes'
                                    AND $6::timestamptz + INTERVAL '30 minutes'
+         ${filters.clause}
        ORDER BY (ST_Distance(r.origin_geo, ST_MakePoint($1,$2)::geography)
                + ST_Distance(r.destination_geo, ST_MakePoint($3,$4)::geography)) ASC
        LIMIT 20`,
-      [pickupLng, pickupLat, dropLng, dropLat, radius, preferredTime]
+      [pickupLng, pickupLat, dropLng, dropLat, radius, preferredTime, ...filters.params]
     );
 
     const rides = result.rows.map((r) => ({
@@ -124,7 +129,7 @@ router.get('/search', authMiddleware, async (req, res) => {
 // closest first. If nothing is within range (e.g. new/quiet area), falls back to showing
 // all active rides so the feed is never empty.
 router.get('/nearby', authMiddleware, async (req, res) => {
-  const { lat, lng, radiusKm } = req.query;
+  const { lat, lng, radiusKm, sameCompanyOnly, sameGenderOnly } = req.query;
   const radius = (radiusKm ? parseFloat(radiusKm) : 2) * 1000; // meters
 
   if (!lat || !lng) {
@@ -140,29 +145,35 @@ router.get('/nearby', authMiddleware, async (req, res) => {
   `;
 
   try {
+    const me = await pool.query('SELECT company_name, gender FROM users WHERE id=$1', [req.user.id]);
+
+    const nearbyFilters = buildSafetyFilters({ sameCompanyOnly, sameGenderOnly, me: me.rows[0], startIndex: 5 });
     const nearbyResult = await pool.query(
       `SELECT ${selectFields}
        FROM rides r JOIN users u ON u.id = r.driver_id
        WHERE r.status = 'active' AND r.seats_booked < r.seats_total
          AND r.driver_id != $3 AND r.departure_time > now()
          AND ST_DWithin(r.origin_geo, ST_MakePoint($1,$2)::geography, $4)
+         ${nearbyFilters.clause}
        ORDER BY origin_distance_m ASC, r.departure_time ASC
        LIMIT 30`,
-      [lng, lat, req.user.id, radius]
+      [lng, lat, req.user.id, radius, ...nearbyFilters.params]
     );
 
     let rows = nearbyResult.rows;
     let isFallback = false;
 
     if (rows.length === 0) {
+      const fallbackFilters = buildSafetyFilters({ sameCompanyOnly, sameGenderOnly, me: me.rows[0], startIndex: 4 });
       const allResult = await pool.query(
         `SELECT ${selectFields}
          FROM rides r JOIN users u ON u.id = r.driver_id
          WHERE r.status = 'active' AND r.seats_booked < r.seats_total
            AND r.driver_id != $3 AND r.departure_time > now()
+           ${fallbackFilters.clause}
          ORDER BY origin_distance_m ASC, r.departure_time ASC
          LIMIT 30`,
-        [lng, lat, req.user.id]
+        [lng, lat, req.user.id, ...fallbackFilters.params]
       );
       rows = allResult.rows;
       isFallback = true;
