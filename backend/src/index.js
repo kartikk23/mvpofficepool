@@ -20,6 +20,7 @@ const savedAddressRoutes = require('./routes/savedAddresses');
 const impactRoutes = require('./routes/impact');
 const circleRoutes = require('./routes/circles');
 const { startRecurringRidesJob } = require('./utils/recurringRides');
+const { startNightlyReminderJob } = require('./utils/nightlyReminder');
 
 const app = express();
 const server = http.createServer(app);
@@ -86,3 +87,4 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`OfficePool API running on port ${PORT}`));
 startRecurringRidesJob();
+startNightlyReminderJob();
