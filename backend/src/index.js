@@ -19,6 +19,7 @@ const vehicleRoutes = require('./routes/vehicles');
 const savedAddressRoutes = require('./routes/savedAddresses');
 const impactRoutes = require('./routes/impact');
 const circleRoutes = require('./routes/circles');
+const internalRoutes = require('./routes/internal');
 const { startRecurringRidesJob } = require('./utils/recurringRides');
 const { startEngagementReminderJob } = require('./utils/engagementReminder');
 
@@ -45,6 +46,7 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/saved-addresses', savedAddressRoutes);
 app.use('/api/impact', impactRoutes);
 app.use('/api/circles', circleRoutes);
+app.use('/api/internal', internalRoutes);
 
 // ---------------- REAL-TIME: chat + live location share during a ride ----------------
 io.on('connection', (socket) => {

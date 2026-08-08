@@ -1,0 +1,19 @@
+name: Backend keep-alive / scheduled tasks
+
+# Render's free tier puts the backend to sleep after ~15 min with no incoming
+# traffic, which kills any in-process setInterval timer (engagement reminders,
+# recurring-ride rollover). This pings a dedicated endpoint every 10 minutes,
+# which both wakes the service back up and runs those checks.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit /api/internal/tick
+        run: |
+          curl -sf -X POST "https://mvpofficepool.onrender.com/api/internal/tick" \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_CRON_SECRET }}"

@@ -71,4 +71,4 @@ function startEngagementReminderJob() {
   }, 10 * 60 * 1000); // check every 10 minutes
 }
 
-module.exports = { startEngagementReminderJob, sendEngagementReminder };
+module.exports = { startEngagementReminderJob, sendEngagementReminder, checkAndSendEngagementReminder };
