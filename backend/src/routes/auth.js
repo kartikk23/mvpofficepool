@@ -7,8 +7,9 @@ const nodemailer = require('nodemailer');
 
 const router = express.Router();
 
-// In-memory OTP store (swap for Redis in production)
+// In-memory OTP stores (swap for Redis in production)
 const otpStore = new Map(); // key: email, value: { code, expiresAt }
+const passwordResetOtpStore = new Map(); // key: email, value: { code, expiresAt, userId }
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -74,6 +75,55 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ---------------- FORGOT PASSWORD (step 1: send OTP to account email) ----------------
+router.post('/forgot-password/send-otp', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  try {
+    const result = await pool.query('SELECT id FROM users WHERE email=$1', [email.trim().toLowerCase()]);
+    if (!result.rows.length) return res.status(404).json({ error: 'No account found with this email' });
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    passwordResetOtpStore.set(email, { code, expiresAt: Date.now() + 10 * 60 * 1000, userId: result.rows[0].id });
+
+    await transporter.sendMail({
+      from: process.env.SMTP_USER,
+      to: email,
+      subject: 'Reset your OfficePool password',
+      text: `Your OfficePool password reset code is ${code}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
+    });
+    res.json({ message: 'Reset code sent to your email' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to send reset code' });
+  }
+});
+
+// ---------------- FORGOT PASSWORD (step 2: verify OTP + set new password) ----------------
+router.post('/forgot-password/reset', async (req, res) => {
+  const { email, code, newPassword } = req.body;
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ error: 'email, code, and newPassword are required' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  const record = passwordResetOtpStore.get(email);
+  if (!record || record.code !== code || Date.now() > record.expiresAt) {
+    return res.status(400).json({ error: 'Invalid or expired code' });
+  }
+  try {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2', [passwordHash, record.userId]);
+    passwordResetOtpStore.delete(email);
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 

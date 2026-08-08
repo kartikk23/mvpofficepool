@@ -259,7 +259,8 @@ router.post('/:id/cancel', authMiddleware, async (req, res) => {
 router.get('/mine', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT b.*, r.origin_address, r.destination_address, r.departure_time, r.driver_id
+      `SELECT b.*, r.origin_address, r.destination_address, r.departure_time, r.driver_id,
+              EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.status='success') AS is_paid
        FROM bookings b JOIN rides r ON r.id = b.ride_id
        WHERE b.rider_id=$1 ORDER BY b.created_at DESC`,
       [req.user.id]
