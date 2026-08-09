@@ -67,6 +67,9 @@ router.post('/login', async (req, res) => {
     const result = await pool.query('SELECT * FROM users WHERE username=$1', [(username || '').trim().toLowerCase()]);
     if (!result.rows.length) return res.status(401).json({ error: 'Invalid credentials' });
     const user = result.rows[0];
+    if (user.account_status !== 'active') {
+      return res.status(403).json({ error: 'This account is no longer active' });
+    }
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
     delete user.password_hash;

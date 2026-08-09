@@ -73,6 +73,49 @@ router.get('/:id/public', authMiddleware, async (req, res) => {
   }
 });
 
+// ---------------- DELETE ACCOUNT ----------------
+// Anonymizes rather than hard-deletes: payments, ratings, messages, and sos_alerts
+// reference users(id) without ON DELETE CASCADE (by design — another user's ride/
+// payment/rating history must survive), so a real DELETE would fail with a foreign
+// key violation for almost any account that's actually been used. Scrubbing personal
+// fields and marking the account 'deleted' satisfies the same "erase my data" intent
+// without breaking other people's records, and blocks future logins to this account.
+router.delete('/me', authMiddleware, async (req, res) => {
+  try {
+    const anonymizedTag = `deleted_${req.user.id.slice(0, 8)}`;
+    await pool.query(
+      `UPDATE users SET
+        full_name = 'Deleted User',
+        username = $1,
+        email = $2,
+        phone = $3,
+        password_hash = '',
+        profile_photo_url = NULL,
+        company_name = NULL,
+        designation = NULL,
+        company_email = NULL,
+        company_email_verified = FALSE,
+        linkedin_id = NULL,
+        linkedin_verified = FALSE,
+        linkedin_profile_url = NULL,
+        gender = NULL,
+        push_token = NULL,
+        upi_id = NULL,
+        account_status = 'deleted',
+        updated_at = now()
+       WHERE id=$4`,
+      [anonymizedTag, `${anonymizedTag}@deleted.officepool.app`, anonymizedTag, req.user.id]
+    );
+    await pool.query('DELETE FROM saved_addresses WHERE user_id=$1', [req.user.id]);
+    await pool.query('DELETE FROM vehicles WHERE user_id=$1', [req.user.id]);
+    await pool.query('DELETE FROM kyc_documents WHERE user_id=$1', [req.user.id]);
+    res.json({ message: 'Account deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
 router.post('/push-token', authMiddleware, async (req, res) => {
   const { pushToken } = req.body;
   if (!pushToken) return res.status(400).json({ error: 'pushToken is required' });

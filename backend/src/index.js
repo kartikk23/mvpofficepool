@@ -20,6 +20,7 @@ const savedAddressRoutes = require('./routes/savedAddresses');
 const impactRoutes = require('./routes/impact');
 const circleRoutes = require('./routes/circles');
 const internalRoutes = require('./routes/internal');
+const legalRoutes = require('./routes/legal');
 const { startRecurringRidesJob } = require('./utils/recurringRides');
 const { startEngagementReminderJob } = require('./utils/engagementReminder');
 
@@ -34,6 +35,7 @@ const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }); // 300 req / 
 app.use(limiter);
 
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+app.use('/', legalRoutes); // public /privacy, /terms, /delete-account pages (Play Store requirements)
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
