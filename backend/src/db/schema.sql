@@ -169,11 +169,16 @@ CREATE INDEX idx_ratings_ratee ON ratings(ratee_id);
 -- ---------------- CHAT ----------------
 CREATE TABLE messages (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    booking_id      UUID REFERENCES bookings(id) ON DELETE CASCADE,
+    booking_id      UUID REFERENCES bookings(id) ON DELETE CASCADE, -- optional context; a thread is (sender,recipient)
     sender_id       UUID REFERENCES users(id),
+    recipient_id    UUID REFERENCES users(id),
     body            TEXT,
+    read_at         TIMESTAMPTZ,
     sent_at         TIMESTAMPTZ DEFAULT now()
 );
+CREATE INDEX idx_messages_booking ON messages(booking_id);
+CREATE INDEX idx_messages_sender_recipient ON messages(sender_id, recipient_id);
+CREATE INDEX idx_messages_recipient_sender ON messages(recipient_id, sender_id);
 
 -- ---------------- SOS / SAFETY ----------------
 CREATE TABLE sos_alerts (

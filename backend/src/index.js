@@ -21,6 +21,8 @@ const impactRoutes = require('./routes/impact');
 const circleRoutes = require('./routes/circles');
 const internalRoutes = require('./routes/internal');
 const legalRoutes = require('./routes/legal');
+const messageRoutes = require('./routes/messages');
+const runMigrations = require('./db/migrate');
 const { startRecurringRidesJob } = require('./utils/recurringRides');
 const { startEngagementReminderJob } = require('./utils/engagementReminder');
 
@@ -49,33 +51,37 @@ app.use('/api/saved-addresses', savedAddressRoutes);
 app.use('/api/impact', impactRoutes);
 app.use('/api/circles', circleRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/messages', messageRoutes);
 
 // ---------------- REAL-TIME: chat + live location share during a ride ----------------
+function dmRoom(userIdA, userIdB) {
+  return `dm_${[userIdA, userIdB].sort().join('_')}`;
+}
+
 io.on('connection', (socket) => {
   socket.on('join_booking', (bookingId) => {
     socket.join(`booking_${bookingId}`);
   });
 
-  socket.on('chat_message', async ({ bookingId, senderId, body }) => {
-    if (!bookingId || !senderId || !body?.trim()) return;
+  socket.on('join_dm', ({ userId, otherUserId }) => {
+    if (!userId || !otherUserId) return;
+    socket.join(dmRoom(userId, otherUserId));
+  });
+
+  socket.on('chat_message', async ({ recipientId, senderId, body, bookingId }) => {
+    if (!recipientId || !senderId || !body?.trim()) return;
     try {
       const result = await pool.query(
-        `INSERT INTO messages (id, booking_id, sender_id, body) VALUES ($1,$2,$3,$4)
+        `INSERT INTO messages (id, booking_id, sender_id, recipient_id, body) VALUES ($1,$2,$3,$4,$5)
          RETURNING id, sent_at`,
-        [uuidv4(), bookingId, senderId, body.trim()]
+        [uuidv4(), bookingId || null, senderId, recipientId, body.trim()]
       );
       const { id, sent_at } = result.rows[0];
-      io.to(`booking_${bookingId}`).emit('chat_message', { id, bookingId, senderId, body: body.trim(), sentAt: sent_at });
+      io.to(dmRoom(senderId, recipientId)).emit('chat_message', {
+        id, bookingId, senderId, recipientId, body: body.trim(), sentAt: sent_at,
+      });
 
-      const participants = await pool.query(
-        `SELECT b.rider_id, r.driver_id FROM bookings b JOIN rides r ON r.id = b.ride_id WHERE b.id=$1`,
-        [bookingId]
-      );
-      if (participants.rows.length) {
-        const { rider_id, driver_id } = participants.rows[0];
-        const recipientId = senderId === rider_id ? driver_id : rider_id;
-        notifyUser(recipientId, 'New message', body.trim(), { type: 'chat_message', bookingId });
-      }
+      notifyUser(recipientId, 'New message', body.trim(), { type: 'chat_message', bookingId });
     } catch (err) {
       console.error('Failed to persist chat message', err);
     }
@@ -87,6 +93,8 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {});
 });
+
+runMigrations(pool).catch((err) => console.error('Migration failed', err));
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`OfficePool API running on port ${PORT}`));

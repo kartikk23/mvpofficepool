@@ -17,11 +17,14 @@ export const AuthAPI = {
   login: (data) => api.post('/auth/login', data),
   sendWorkEmailOtp: (data) => api.post('/auth/work-email/send-otp', data),
   verifyWorkEmailOtp: (data) => api.post('/auth/work-email/verify-otp', data),
+  forgotPasswordSendOtp: (email) => api.post('/auth/forgot-password/send-otp', { email }),
+  forgotPasswordReset: (data) => api.post('/auth/forgot-password/reset', data),
 };
 
 export const UserAPI = {
   me: () => api.get('/users/me'),
   updateMe: (data) => api.put('/users/me', data),
+  deleteMe: () => api.delete('/users/me'),
   publicProfile: (id) => api.get(`/users/${id}/public`),
   savePushToken: (pushToken) => api.post('/users/push-token', { pushToken }),
 };
@@ -29,6 +32,7 @@ export const UserAPI = {
 export const RideAPI = {
   create: (data) => api.post('/rides', data),
   search: (params) => api.get('/rides/search', { params }),
+  nearby: (params) => api.get('/rides/nearby', { params }),
   details: (id) => api.get(`/rides/${id}`),
   cancel: (id) => api.post(`/rides/${id}/cancel`),
 };
@@ -71,6 +75,26 @@ export const VehicleAPI = {
 
 export const SosAPI = {
   trigger: (data) => api.post('/sos', data),
+};
+
+export const ImpactAPI = {
+  report: (month) => api.get('/impact/report', { params: month ? { month } : {} }),
+  streak: () => api.get('/impact/streak'),
+  leaderboard: () => api.get('/impact/leaderboard'),
+  connections: (userId) => api.get(`/impact/connections/${userId}`),
+  connectionsList: (userId) => api.get(`/impact/connections/${userId}/list`),
+  badges: () => api.get('/impact/badges'),
+};
+
+export const CircleAPI = {
+  mine: () => api.get('/circles/mine'),
+};
+
+export const MessagesAPI = {
+  threads: () => api.get('/messages/threads'),
+  thread: (userId) => api.get(`/messages/thread/${userId}`),
+  markRead: (userId) => api.post(`/messages/thread/${userId}/read`),
+  unreadCount: () => api.get('/messages/unread-count'),
 };
 
 export default api;
