@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
-import * as Location from 'expo-location';
 import { RideAPI, BookingAPI } from '../api/client';
 import { ProfileCard } from '../components/ProfileCard';
 import { RoutePreviewMap } from '../components/RoutePreviewMap';
@@ -20,14 +19,10 @@ export default function RideDetailsScreen({ route, navigation }) {
   const handleBook = async () => {
     setBooking(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') throw new Error('Location permission is required to book a ride');
-      const loc = await Location.getCurrentPositionAsync({});
-
       const { data } = await BookingAPI.create({
         rideId,
-        pickupLat: loc.coords.latitude,
-        pickupLng: loc.coords.longitude,
+        pickupLat: ride.origin_lat,
+        pickupLng: ride.origin_lng,
         dropLat: ride.destination_lat,
         dropLng: ride.destination_lng,
       });
