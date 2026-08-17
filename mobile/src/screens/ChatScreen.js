@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList,
-  KeyboardAvoidingView, Platform,
+  Keyboard, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { io } from 'socket.io-client';
 import { BASE_URL, MessagesAPI, UserAPI } from '../api/client';
 import { colors, radius, shadow } from '../theme';
@@ -14,10 +13,25 @@ export default function ChatScreen({ route, navigation }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [myUserId, setMyUserId] = useState(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const socketRef = useRef(null);
   const listRef = useRef(null);
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+
+  // Android's edge-to-edge display mode (default since Expo SDK 53) means the OS no
+  // longer reliably auto-resizes the window for the keyboard, and KeyboardAvoidingView's
+  // "height" behavior doesn't compensate correctly on top of it. Tracking real keyboard
+  // height via events and applying it directly sidesteps both, on both platforms.
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (name) {
@@ -70,11 +84,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
-    >
+    <View style={[styles.container, { paddingBottom: keyboardHeight }]}>
       <FlatList
         ref={listRef}
         data={messages}
@@ -112,7 +122,7 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.sendButtonText}>➤</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
